@@ -1,11 +1,12 @@
-# Домашняя позиция
+# Home position
 homePosition = ( 0.0, 0.0, 0.0)
 
-# Смещение координат вывода
+# Offset of the output coordinates
 posOffset = ( 0.0, 0.0, 0.0 );
 
-# Скорость быстрого перемещения
+# The speed of fast movement
 rapidFeedSpeed = 1000.0
 
-# Разрешение круговой интерполяции (количество делений на один оборот)
+# Resolution of circular interpolation (number of divisions per revolution)
 circularResolution = 360.0
+
