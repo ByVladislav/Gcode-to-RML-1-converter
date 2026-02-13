@@ -1,4 +1,3 @@
-# gcode2rml.py
 import os
 import re
 import math
@@ -8,7 +7,7 @@ from tkinter import filedialog, messagebox, scrolledtext
 import threading
 
 
-# ==================== Векторные операции ====================
+# ==================== Vector Operations ====================
 
 class Vector:
     def __init__(self, x=0.0, y=0.0, z=0.0):
@@ -52,17 +51,17 @@ class Vector:
         return f"({self.x}, {self.y}, {self.z})"
 
 
-# ==================== Конвертер G-code в RML-1 ====================
+# ==================== G-code to RML-1 Converter ====================
 
 class GCode2RMLConverter:
     def __init__(self):
-        # Импортированные настройки
+        # Imported settings
         self.home_position = Vector(0.0, 0.0, 0.0)
         self.pos_offset = Vector(0.0, 0.0, 0.0)
         self.rapid_feed_speed = 1000.0
         self.circular_resolution = 360.0
 
-        # Состояние обработки
+        # Processing state
         self.abs_inc = 90  # 90: abs / 91: inc
         self.mm_in = 21  # 20: inches / 21: millimeters
         self.mov_mode = 0  # 0: rapid / 1: linear / 2: CW circle / 3: CCW circle / 28: return home
@@ -96,7 +95,7 @@ class GCode2RMLConverter:
             self.callback_log(message)
 
     def import_settings(self, setting_file_path):
-        """Импорт настроек из файла setting.txt"""
+        """Import settings from setting.txt file"""
         try:
             with open(setting_file_path, 'r', encoding='utf-8') as f:
                 for line in f:
@@ -110,7 +109,7 @@ class GCode2RMLConverter:
                         value = value.strip()
 
                         if key == "homePosition":
-                            # Удаляем скобки и пробелы
+                            # Remove parentheses and spaces
                             value = value.replace('(', '').replace(')', '').replace(' ', '')
                             coords = value.split(',')
                             if len(coords) == 3:
@@ -125,10 +124,10 @@ class GCode2RMLConverter:
                         elif key == "circularResolution":
                             self.circular_resolution = float(value)
         except Exception as e:
-            self.log(f"Ошибка при чтении настроек: {e}")
+            self.log(f"Error reading settings: {e}")
 
     def plane_conv(self, vect, plane):
-        """Преобразование координат для выбранной плоскости"""
+        """Coordinate transformation for selected plane"""
         if plane == 17:  # XY plane
             return Vector(vect.x, vect.y, vect.z)
         elif plane == 18:  # XZ plane
@@ -138,7 +137,7 @@ class GCode2RMLConverter:
         return vect
 
     def plane_conv_inv(self, vect, plane):
-        """Обратное преобразование координат"""
+        """Inverse coordinate transformation"""
         if plane == 17:  # XY plane
             return Vector(vect.x, vect.y, vect.z)
         elif plane == 18:  # XZ plane
@@ -148,40 +147,40 @@ class GCode2RMLConverter:
         return vect
 
     def move(self, next_pos, feed_speed):
-        """Генерация команды перемещения"""
-        # Масштабирование и смещение
+        """Generate movement command"""
+        # Scaling and offset
         output_pos = next_pos.add(self.pos_offset)
         output_pos = output_pos.scale(100.0)
         output_pos = output_pos.add(Vector(0.5, 0.5, 0.5))
 
-        # Форматирование координат как целых чисел
+        # Format coordinates as integers
         x = int(output_pos.x)
         y = int(output_pos.y)
         z = int(output_pos.z)
 
-        # Добавление команды скорости, если она изменилась
+        # Add speed command if changed
         if not hasattr(self, 'last_feed_speed') or feed_speed != self.last_feed_speed:
             speed_cmd = f"V{feed_speed / 60:.1f};"
             self.output_lines.append(speed_cmd)
             self.last_feed_speed = feed_speed
 
-        # Команда перемещения
+        # Movement command
         move_cmd = f"Z{x},{y},{z};"
         self.output_lines.append(move_cmd)
 
-        # Обновление текущей позиции
+        # Update current position
         self.current_pos = next_pos
 
     def rapid_positioning(self, next_pos):
-        """Обработка G00 - быстрое позиционирование"""
+        """Handle G00 - rapid positioning"""
         self.move(next_pos, self.rapid_feed_speed)
 
     def linear_interpolation(self, next_pos, feed_speed):
-        """Обработка G01 - линейная интерполяция"""
+        """Handle G01 - linear interpolation"""
         self.move(next_pos, feed_speed)
 
     def circular_interpolation(self, next_pos, center_pos_inc, plane_select, direction, feed_speed):
-        """Обработка G02/G03 - круговая интерполяция"""
+        """Handle G02/G03 - circular interpolation"""
         mid_current_pos = self.plane_conv(self.current_pos, plane_select)
         mid_next_pos = self.plane_conv(next_pos, plane_select)
         mid_center_pos_inc = self.plane_conv(center_pos_inc, plane_select)
@@ -191,24 +190,24 @@ class GCode2RMLConverter:
         mid_delta1 = mid_current_pos.sub(mid_center_pos)
         mid_delta2 = mid_next_pos.sub(mid_center_pos)
 
-        # Обнуляем Z для вычислений в плоскости
+        # Zero Z for calculations in the plane
         mid_delta1.z = 0.0
         mid_delta2.z = 0.0
 
-        # Вычисление угла
+        # Calculate angle
         delta_angle = math.acos(mid_delta1.dot(mid_delta2) / (mid_delta2.size() * mid_delta1.size()))
         if delta_angle <= 0:
             delta_angle += 2 * math.pi
 
-        # Количество шагов
+        # Number of steps
         delta_steps = int(self.circular_resolution * delta_angle / (2 * math.pi))
 
         for step in range(delta_steps):
             theta_temp = 2 * math.pi * step / self.circular_resolution
-            if direction == 2:  # По часовой стрелке
+            if direction == 2:  # Clockwise
                 theta_temp *= -1
 
-            # Вычисление промежуточной точки
+            # Calculate intermediate point
             pos = Vector()
             pos.x = (mid_delta1.x * math.cos(theta_temp) +
                      mid_delta1.y * math.sin(-theta_temp) +
@@ -219,24 +218,24 @@ class GCode2RMLConverter:
             pos.z = ((mid_next_pos.z - mid_start_pos.z) *
                      (theta_temp / delta_angle) + mid_start_pos.z)
 
-            # Преобразование обратно и перемещение
+            # Transform back and move
             actual_pos = self.plane_conv_inv(pos, plane_select)
             self.move(actual_pos, feed_speed)
             self.current_pos = actual_pos
 
-        # Финальное перемещение в конечную точку
+        # Final move to end point
         self.move(next_pos, feed_speed)
         self.current_pos = next_pos
 
     def return_home(self, via_pos):
-        """Обработка G28 - возврат в домашнюю позицию"""
+        """Handle G28 - return to home position"""
         self.rapid_positioning(via_pos)
         self.rapid_positioning(self.home_position)
 
     def process_word(self, address, value_str):
-        """Обработка одного слова G-code"""
+        """Process a single G-code word"""
         try:
-            if address == ';':  # Конец блока
+            if address == ';':  # End of block
                 if self.coor_changed == 0:
                     return
 
@@ -253,84 +252,84 @@ class GCode2RMLConverter:
                 self.coor_changed = 0
                 self.center_pos_inc = Vector(0, 0, 0)
 
-            elif address == 'F':  # Скорость подачи
+            elif address == 'F':  # Feed rate
                 self.feed_speed = float(value_str)
 
-            elif address == 'G':  # G-коды
+            elif address == 'G':  # G-codes
                 g_code = int(value_str)
 
-                if g_code == 0:  # Быстрое позиционирование
+                if g_code == 0:  # Rapid positioning
                     self.mov_mode = 0
-                elif g_code == 1:  # Линейная интерполяция
+                elif g_code == 1:  # Linear interpolation
                     self.mov_mode = 1
-                elif g_code == 2:  # Круговая интерполяция по часовой
+                elif g_code == 2:  # Circular interpolation CW
                     self.mov_mode = 2
-                elif g_code == 3:  # Круговая интерполяция против часовой
+                elif g_code == 3:  # Circular interpolation CCW
                     self.mov_mode = 3
-                elif g_code == 4:  # Задержка
+                elif g_code == 4:  # Dwell
                     self.dwell_enable = 1
-                elif g_code == 17:  # Плоскость XY
+                elif g_code == 17:  # XY plane
                     self.plane_select = 17
-                elif g_code == 18:  # Плоскость XZ
+                elif g_code == 18:  # XZ plane
                     self.plane_select = 18
-                elif g_code == 19:  # Плоскость YZ
+                elif g_code == 19:  # YZ plane
                     self.plane_select = 19
-                elif g_code == 20:  # Дюймы
+                elif g_code == 20:  # Inches
                     self.mm_in = 20
-                elif g_code == 21:  # Миллиметры
+                elif g_code == 21:  # Millimeters
                     self.mm_in = 21
-                elif g_code == 28:  # Возврат домой
+                elif g_code == 28:  # Return home
                     self.mov_mode = 28
-                elif g_code == 40:  # Компенсация радиуса инструмента выкл
+                elif g_code == 40:  # Cutter radius compensation off
                     self.TROC_mode = 40
                     self.TROC_tool_num = 0
-                elif g_code == 41:  # Компенсация радиуса инструмента лево
+                elif g_code == 41:  # Cutter radius compensation left
                     self.TROC_mode = 41
-                elif g_code == 42:  # Компенсация радиуса инструмента право
+                elif g_code == 42:  # Cutter radius compensation right
                     self.TROC_mode = 42
-                elif g_code == 43:  # Компенсация длины инструмента плюс
+                elif g_code == 43:  # Tool length compensation positive
                     self.TLOC_mode = 43
-                elif g_code == 44:  # Компенсация длины инструмента минус
+                elif g_code == 44:  # Tool length compensation negative
                     self.TLOC_mode = 44
-                elif g_code == 49:  # Компенсация длины инструмента отмена
+                elif g_code == 49:  # Tool length compensation cancel
                     self.TLOC_mode = 49
-                elif 54 <= g_code <= 59:  # Системы координат
+                elif 54 <= g_code <= 59:  # Coordinate systems
                     self.coor_sys = g_code - 54
-                elif g_code == 90:  # Абсолютные координаты
+                elif g_code == 90:  # Absolute coordinates
                     self.abs_inc = 90
                     self.output_lines.append("^PA;")
-                elif g_code == 91:  # Относительные координаты
+                elif g_code == 91:  # Relative coordinates
                     self.abs_inc = 91
                     self.output_lines.append("^PR;")
-                elif g_code == 94:  # Подача в минуту
+                elif g_code == 94:  # Feed per minute
                     self.feed_mode = 94
-                elif g_code == 95:  # Подача на оборот
+                elif g_code == 95:  # Feed per revolution
                     self.feed_mode = 95
 
-            elif address == 'I':  # Смещение центра по X
+            elif address == 'I':  # Center offset X
                 self.center_pos_inc.x = float(value_str)
-            elif address == 'J':  # Смещение центра по Y
+            elif address == 'J':  # Center offset Y
                 self.center_pos_inc.y = float(value_str)
-            elif address == 'K':  # Смещение центра по Z
+            elif address == 'K':  # Center offset Z
                 self.center_pos_inc.z = float(value_str)
 
-            elif address == 'M':  # M-коды
+            elif address == 'M':  # M-codes
                 m_code = int(value_str)
 
-                if m_code == 3:  # Шпиндель по часовой
+                if m_code == 3:  # Spindle CW
                     self.spindle_state = 1
                     self.output_lines.append("!RC15;!MC1;")
-                elif m_code == 4:  # Шпиндель против часовой
+                elif m_code == 4:  # Spindle CCW
                     self.spindle_state = -1
                     self.output_lines.append("!RC15;!MC1;")
-                elif m_code == 5:  # Стоп шпинделя
+                elif m_code == 5:  # Spindle stop
                     self.spindle_state = 0
                     self.output_lines.append("!MC0;")
 
-            elif address == 'S':  # Скорость шпинделя
+            elif address == 'S':  # Spindle speed
                 self.spindle_speed = float(value_str)
 
-            elif address == 'X':  # Координата X
+            elif address == 'X':  # X coordinate
                 val = float(value_str)
                 if self.abs_inc == 91:
                     self.next_pos.x += val
@@ -338,7 +337,7 @@ class GCode2RMLConverter:
                     self.next_pos.x = val
                 self.coor_changed = 1
 
-            elif address == 'Y':  # Координата Y
+            elif address == 'Y':  # Y coordinate
                 val = float(value_str)
                 if self.abs_inc == 91:
                     self.next_pos.y += val
@@ -346,7 +345,7 @@ class GCode2RMLConverter:
                     self.next_pos.y = val
                 self.coor_changed = 1
 
-            elif address == 'Z':  # Координата Z
+            elif address == 'Z':  # Z coordinate
                 val = float(value_str)
                 if self.abs_inc == 91:
                     self.next_pos.z += val
@@ -355,28 +354,28 @@ class GCode2RMLConverter:
                 self.coor_changed = 1
 
         except ValueError as e:
-            self.log(f"Ошибка преобразования значения: {address}{value_str} - {e}")
+            self.log(f"Value conversion error: {address}{value_str} - {e}")
 
     def convert(self, input_file_path, output_file_path):
-        """Основной метод конвертации"""
-        self.log("Начало конвертации...")
+        """Main conversion method"""
+        self.log("Starting conversion...")
 
-        # Импорт настроек
+        # Import settings
         setting_file = os.path.join(os.path.dirname(__file__), "setting.txt")
         if os.path.exists(setting_file):
             self.import_settings(setting_file)
         else:
-            self.log("Файл настроек setting.txt не найден, используются значения по умолчанию")
+            self.log("Settings file setting.txt not found, using default values")
 
-        # Чтение входного файла
+        # Read input file
         try:
             with open(input_file_path, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
         except Exception as e:
-            self.log(f"Ошибка чтения файла: {e}")
+            self.log(f"Error reading file: {e}")
             return False
 
-        # Инициализация выходного файла
+        # Initialize output file
         self.output_lines = []
         self.output_lines.append(";;^IN;")
         self.output_lines.append("V85.0;")
@@ -384,13 +383,13 @@ class GCode2RMLConverter:
         self.output_lines.append("Z0,0,15500;")
         self.output_lines.append("^PA;")
 
-        # Разбор G-code
+        # Parse G-code
         lines = content.split('\n')
         total_lines = len(lines)
 
         comment_mode = False
         for i, line in enumerate(lines):
-            # Отображение прогресса
+            # Update progress
             if self.callback_progress:
                 progress = (i + 1) / total_lines * 100
                 self.callback_progress(progress)
@@ -399,7 +398,7 @@ class GCode2RMLConverter:
             if not line:
                 continue
 
-            # Удаление комментариев в скобках
+            # Remove comments in parentheses
             result_line = ""
             for char in line:
                 if char == '(':
@@ -413,7 +412,7 @@ class GCode2RMLConverter:
             if not line or line.startswith('%'):
                 continue
 
-            # Разделение на слова
+            # Split into words
             words = re.findall(r'[A-Z][^A-Z;]*', line)
 
             for word in words:
@@ -422,24 +421,24 @@ class GCode2RMLConverter:
                     value = word[1:]
                     self.process_word(address, value)
 
-            # Обработка конца строки
+            # Process end of line
             self.process_word(';', '0')
 
-        # Завершающая команда
+        # Final command
         self.output_lines.append("^IN;")
 
-        # Запись в выходной файл
+        # Write to output file
         try:
             with open(output_file_path, 'w', encoding='utf-8') as f:
                 f.write(''.join(self.output_lines))
-            self.log(f"Конвертация завершена успешно!\nФайл сохранен: {output_file_path}")
+            self.log(f"Conversion completed successfully!\nFile saved: {output_file_path}")
             return True
         except Exception as e:
-            self.log(f"Ошибка записи файла: {e}")
+            self.log(f"Error writing file: {e}")
             return False
 
 
-# ==================== Графический интерфейс ====================
+# ==================== Graphical User Interface ====================
 
 class GCodeConverterGUI:
     def __init__(self):
@@ -454,64 +453,64 @@ class GCodeConverterGUI:
         self.create_widgets()
 
     def create_widgets(self):
-        # Фрейм для выбора файлов
+        # File selection frame
         file_frame = tk.Frame(self.window)
         file_frame.pack(pady=10, padx=10, fill=tk.X)
 
-        # Входной файл
-        tk.Label(file_frame, text="Входной G-code файл:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        # Input file
+        tk.Label(file_frame, text="Input G-code file:").grid(row=0, column=0, sticky=tk.W, pady=5)
         self.input_file_var = tk.StringVar()
         tk.Entry(file_frame, textvariable=self.input_file_var, width=50).grid(row=0, column=1, padx=5)
-        tk.Button(file_frame, text="Обзор...", command=self.browse_input_file).grid(row=0, column=2)
+        tk.Button(file_frame, text="Browse...", command=self.browse_input_file).grid(row=0, column=2)
 
-        # Выходной файл
-        tk.Label(file_frame, text="Выходной RML файл:").grid(row=1, column=0, sticky=tk.W, pady=5)
+        # Output file
+        tk.Label(file_frame, text="Output RML file:").grid(row=1, column=0, sticky=tk.W, pady=5)
         self.output_file_var = tk.StringVar()
         tk.Entry(file_frame, textvariable=self.output_file_var, width=50).grid(row=1, column=1, padx=5)
-        tk.Button(file_frame, text="Обзор...", command=self.browse_output_file).grid(row=1, column=2)
+        tk.Button(file_frame, text="Browse...", command=self.browse_output_file).grid(row=1, column=2)
 
-        # Прогресс-бар
+        # Progress bar
         self.progress_var = tk.DoubleVar()
         self.progress_bar = ttk.Progressbar(self.window, variable=self.progress_var, maximum=100)
         self.progress_bar.pack(pady=10, padx=10, fill=tk.X)
 
-        # Кнопки управления
+        # Control buttons
         button_frame = tk.Frame(self.window)
         button_frame.pack(pady=10)
 
-        tk.Button(button_frame, text="Конвертировать", command=self.start_conversion,
+        tk.Button(button_frame, text="Convert", command=self.start_conversion,
                   bg="lightblue", padx=20, pady=5).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Очистить лог", command=self.clear_log,
+        tk.Button(button_frame, text="Clear Log", command=self.clear_log,
                   bg="lightgray", padx=20, pady=5).pack(side=tk.LEFT, padx=5)
-        tk.Button(button_frame, text="Выход", command=self.window.quit,
+        tk.Button(button_frame, text="Exit", command=self.window.quit,
                   bg="lightcoral", padx=20, pady=5).pack(side=tk.LEFT, padx=5)
 
-        # Лог
-        tk.Label(self.window, text="Лог выполнения:").pack(anchor=tk.W, padx=10)
+        # Log
+        tk.Label(self.window, text="Execution log:").pack(anchor=tk.W, padx=10)
 
         self.log_text = scrolledtext.ScrolledText(self.window, height=15)
         self.log_text.pack(pady=10, padx=10, fill=tk.BOTH, expand=True)
 
-        # Статус
-        self.status_var = tk.StringVar(value="Готов к работе")
+        # Status
+        self.status_var = tk.StringVar(value="Ready")
         status_bar = tk.Label(self.window, textvariable=self.status_var,
                               relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
     def browse_input_file(self):
         filename = filedialog.askopenfilename(
-            title="Выберите G-code файл",
+            title="Select G-code file",
             filetypes=[("G-code files", "*.nc;*.cnc;*.gcode;*.txt"), ("All files", "*.*")]
         )
         if filename:
             self.input_file_var.set(filename)
-            # Автогенерация имени выходного файла
+            # Auto-generate output filename
             base = os.path.splitext(filename)[0]
             self.output_file_var.set(base + ".rml")
 
     def browse_output_file(self):
         filename = filedialog.asksaveasfilename(
-            title="Сохранить RML файл как",
+            title="Save RML file as",
             defaultextension=".rml",
             filetypes=[("RML files", "*.rml"), ("All files", "*.*")]
         )
@@ -525,7 +524,7 @@ class GCodeConverterGUI:
 
     def update_progress(self, value):
         self.progress_var.set(value)
-        self.status_var.set(f"Прогресс: {value:.1f}%")
+        self.status_var.set(f"Progress: {value:.1f}%")
         self.window.update_idletasks()
 
     def clear_log(self):
@@ -536,26 +535,26 @@ class GCodeConverterGUI:
         output_file = self.output_file_var.get()
 
         if not input_file:
-            messagebox.showerror("Ошибка", "Выберите входной файл!")
+            messagebox.showerror("Error", "Select input file!")
             return
 
         if not output_file:
-            messagebox.showerror("Ошибка", "Выберите выходной файл!")
+            messagebox.showerror("Error", "Select output file!")
             return
 
         try:
             success = self.converter.convert(input_file, output_file)
             if success:
-                self.status_var.set("Конвертация завершена успешно!")
-                messagebox.showinfo("Успех", "Конвертация завершена успешно!")
+                self.status_var.set("Conversion completed successfully!")
+                messagebox.showinfo("Success", "Conversion completed successfully!")
             else:
-                self.status_var.set("Ошибка конвертации!")
+                self.status_var.set("Conversion error!")
         except Exception as e:
-            self.log_message(f"Ошибка: {e}")
-            self.status_var.set("Ошибка конвертации!")
+            self.log_message(f"Error: {e}")
+            self.status_var.set("Conversion error!")
 
     def start_conversion(self):
-        # Запуск в отдельном потоке, чтобы не блокировать GUI
+        # Run in separate thread to avoid blocking GUI
         thread = threading.Thread(target=self.conversion_thread)
         thread.daemon = True
         thread.start()
@@ -564,27 +563,27 @@ class GCodeConverterGUI:
         self.window.mainloop()
 
 
-# ==================== Точка входа ====================
+# ==================== Entry Point ====================
 
 if __name__ == "__main__":
-    # Создаем файл настроек по умолчанию, если его нет
+    # Create default settings file if it doesn't exist
     setting_file = "setting.txt"
     if not os.path.exists(setting_file):
-        default_settings = """# Домашняя позиция
+        default_settings = """# Home position
 homePosition = ( 0.0, 0.0, 0.0)
 
-# Смещение координат вывода
+# Output coordinate offset
 posOffset = ( 0.0, 0.0, 0.0 );
 
-# Скорость быстрого перемещения
+# Rapid movement speed
 rapidFeedSpeed = 1000.0
 
-# Разрешение круговой интерполяции (количество делений на один оборот)
+# Circular interpolation resolution (number of divisions per revolution)
 circularResolution = 360.0
 """
         with open(setting_file, 'w', encoding='utf-8') as f:
             f.write(default_settings)
 
-    # Запуск GUI
+    # Launch GUI
     app = GCodeConverterGUI()
     app.run()
