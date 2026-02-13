@@ -3,4 +3,4 @@ To work with machines from Roland, you need gcode (nc) in the Roland Machines La
 
 The repository helped me during development: https://github.com/akito914/gcode2rml/tree/master
 
-![Иллюстрация к проекту](https://github.com/jon/coolproject/raw/master/image/image.png)
+![Иллюстрация к проекту](https://github.com/ByVladislav/Gcode-to-RML-1-converter/blob/main/Screenshot.jpg)
